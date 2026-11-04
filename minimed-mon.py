@@ -67,6 +67,7 @@ import m5ui
 import lvgl as lv
 
 import time
+import json
 import ntptime
 from hardware import Timer
 if sys.platform == "esp32":
@@ -85,15 +86,15 @@ else:
 #
 #################################################
 
-VERSION = "2.1"
+VERSION = "2.2-ha"
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
 DEFAULT_TIME_ZONE  = 1
-DEFAULT_PROXY_PORT = 8081
+DEFAULT_HA_PORT    = 8123
 
 # Access point parameters
-API_URL     = "carelink/nohistory"
+API_URL     = "/api/template"   # Home Assistant template API
 AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
@@ -381,7 +382,7 @@ faultIdTable = {
 #
 #################################################
 
-def web_page_config(ntpserver,timezone,proxyport,ssidlist):
+def web_page_config(ntpserver,timezone,haport,ssidlist):
    ssidhtml = ""
    for ssid in ssidlist:
       ssidhtml = ssidhtml + ("<option value=\"%s\">%s (%d)</option>" % (ssid[0],ssid[0],ssid[1]))
@@ -412,14 +413,16 @@ def web_page_config(ntpserver,timezone,proxyport,ssidlist):
             </tbody></table><br> \n \
             <table style="text-align: left; width: 400px; background-color: white; font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
             <tr style="font-size: 18px; background-color: lightgrey"> \n \
-            <td style="width: 200px;">Carelink proxy</td> \n \
+            <td style="width: 200px;">Home Assistant</td> \n \
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
-            <td style="width: 300px;">IP address<br><input type="text" id="fproxyaddr" name="fproxyaddr"></td> \n \
+            <td style="width: 300px;">IP address or hostname<br><input type="text" id="fhaaddr" name="fhaaddr"></td> \n \
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
-            <td style="width: 300px;">Port<br><input type="text" id="fproxyport" name="fproxyport" value=%s></td> \n \
+            <td style="width: 300px;">Port<br><input type="text" id="fhaport" name="fhaport" value=%s></td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">Long-lived access token<br><input type="text" id="fhatoken" name="fhatoken" size=40></td> \n \
             </tbody></table><br> \n \
             <input type="submit" value="Save"> \n \
-            </form></body></html>' % (ssidhtml,ntpserver,timezone,proxyport)
+            </form></body></html>' % (ssidhtml,ntpserver,timezone,haport)
    return html
 
 
@@ -465,7 +468,7 @@ def do_ap_msg(msg,img=None):
    Speaker.playWavFile(sndfile)
 
 
-def do_access_point(ntpserver,timezone,proxyport):
+def do_access_point(ntpserver,timezone,haport):
    # Scan for available networks
    ssidlist = []
    ap = network.WLAN(network.STA_IF)
@@ -499,7 +502,7 @@ def do_access_point(ntpserver,timezone,proxyport):
    while True:
       # Get request
       conn,addr = s.accept()
-      request = str(conn.recv(1024))
+      request = str(conn.recv(2048))
       rmethod  = request.split()[0]
       rurl     = request.split()[1]
       rheaders = request.split()[2]
@@ -519,15 +522,17 @@ def do_access_point(ntpserver,timezone,proxyport):
          ntpserver = get_url_param(rurl, "fntpserver")
          timezone1 = get_url_param(rurl, "ftimezone1")
          timezone2 = get_url_param(rurl, "ftimezone2")
-         proxyaddr = get_url_param(rurl, "fproxyaddr")
-         proxyport = get_url_param(rurl, "fproxyport")
+         haaddr    = get_url_param(rurl, "fhaaddr")
+         haport    = get_url_param(rurl, "fhaport")
+         hatoken   = get_url_param(rurl, "fhatoken")
          if wifissid  != None and wifissid  != "" and \
             wifipass  != None and wifipass  != "" and \
             ntpserver != None and ntpserver != "" and \
             timezone1 != None and timezone1 != "" and \
             timezone2 != None and timezone2 != "" and \
-            proxyaddr != None and proxyaddr != "" and \
-            proxyport != None and proxyport != "":
+            haaddr    != None and haaddr    != "" and \
+            haport    != None and haport    != "" and \
+            hatoken   != None and hatoken   != "":
 
             print("New configuration parameters received\n")
             # Send reboot page
@@ -536,7 +541,7 @@ def do_access_point(ntpserver,timezone,proxyport):
             break
 
       # Send setup page
-      conn.sendall(web_page_config(ntpserver,timezone,proxyport,ssidlist))
+      conn.sendall(web_page_config(ntpserver,timezone,haport,ssidlist))
       conn.close()
 
    # Write config data to EEPROM
@@ -559,19 +564,22 @@ def do_access_point(ntpserver,timezone,proxyport):
       nvs.set_i8('timezone', DEFAULT_TIME_ZONE)
    time.sleep_ms(100)
 
-   nvs.set_str('proxyaddr', proxyaddr.strip())
+   nvs.set_str('haaddr', haaddr.strip())
    time.sleep_ms(100)
 
    try:
-      nvs.set_u16('proxyport', int(proxyport))
+      nvs.set_u16('haport', int(haport))
    except:
-      print("invalid proxy port, saving default")
-      nvs.set_u16(DEFAULT_PROXY_PORT)
+      print("invalid Home Assistant port, saving default")
+      nvs.set_u16('haport', DEFAULT_HA_PORT)
+   time.sleep_ms(100)
+
+   nvs.set_str('hatoken', hatoken.strip())
    time.sleep_ms(100)
 
    nvs.commit()
    print("New configuration parameters stored in EEPROM\n")
-   print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
+   print("wifissid: %s, wifipass: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,haaddr,haport,ntpserver,timezone))
    do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...", None)
 
    # Reset device
@@ -598,20 +606,22 @@ def read_config():
             timezone = "GMT%d" % tz_int
          else:
             timezone = "GMT+%d" % tz_int
-         proxyaddr = nvs.get_str('proxyaddr')
-         proxyport = str(nvs.get_u16('proxyport'))
+         haaddr    = nvs.get_str('haaddr')
+         haport    = str(nvs.get_u16('haport'))
+         hatoken   = nvs.get_str('hatoken')
       except OSError:
          print("Needed configuration parameters not found in EEPROM\n")
          # Start access point for configuration
-         do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
+         do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_HA_PORT)
    else:
       wifissid = None
       wifipass = None
-      proxyaddr = "192.168.1.100"
-      proxyport = DEFAULT_PROXY_PORT
+      haaddr    = "homeassistant.local"
+      haport    = DEFAULT_HA_PORT
+      hatoken   = ""
       ntpserver = None
       timezone  = None
-   return (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone)
+   return (wifissid,wifipass,haaddr,haport,hatoken,ntpserver,timezone)
 
 
 #################################################
@@ -638,7 +648,7 @@ def wlan_connect(wifissid, wifipass):
          w.active(False)
          print("Failed to connect to WIFI network %s\n" % (wifissid))
          # Start access point for configuration
-         do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
+         do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_HA_PORT)
       else:
          print("Wifi connected (IP %s, GW %s, RSSI %d)" % (w.ifconfig()[0], w.ifconfig()[2], w.status("rssi")))
    return w
@@ -891,30 +901,140 @@ def handle_devstatusupdate():
 
 #################################################
 #
+# Home Assistant data access
+#
+# The data comes from the Home Assistant Carelink integration
+# (https://github.com/yo-han/Home-Assistant-Carelink). One request to the
+# template API returns the state of all Carelink entities as JSON. The result
+# is then converted into the same structure the Carelink proxy used to
+# deliver, so the display code below stays unchanged.
+#
+# Entities are found by the end of their entity_id (slug of the sensor name),
+# so the name of the pump in the entity_id does not matter. Fields which the
+# integration does not provide (basal rate, banner, system status message,
+# sensor state) are left out; the display code hides them when missing.
+#
+#################################################
+
+# Jinja template, evaluated by Home Assistant
+HA_TEMPLATE = (
+   "{%- set ns = namespace(s=[], a={}) -%}"
+   "{%- for e in integration_entities('carelink') -%}"
+   "{%- set dc = state_attr(e, 'device_class') -%}"
+   "{%- set v = as_timestamp(states(e), none) if dc == 'timestamp' else states(e) -%}"
+   "{%- set ns.s = ns.s + [[e, v]] -%}"
+   "{%- if e.endswith('_last_alarm') and state_attr(e, 'GUID') -%}"
+   "{%- set ns.a = {'GUID': state_attr(e, 'GUID'), 'faultId': state_attr(e, 'faultId') | string, 'type': state_attr(e, 'type'), 'dateTime': state_attr(e, 'dateTime') | string} -%}"
+   "{%- endif -%}"
+   "{%- endfor -%}"
+   "{{ {'s': ns.s, 'a': ns.a} | tojson }}"
+)
+
+SG_TRENDS = ("UP", "DOWN", "UP_DOUBLE", "DOWN_DOUBLE", "UP_TRIPLE", "DOWN_TRIPLE", "NONE")
+
+def ha_value(states, suffix):
+   for ent, val in states:
+      if ent.endswith(suffix):
+         return val
+   return None
+
+def ha_num(states, suffix, default, conv=float):
+   try:
+      return conv(float(ha_value(states, suffix)))
+   except (ValueError, TypeError):
+      return default
+
+def ha_on(states, suffix):
+   return ha_value(states, suffix) == "on"
+
+def ha_to_jdata(resp):
+   st = resp["s"]
+   if len(st) == 0:
+      print("no entities of the Carelink integration found in Home Assistant")
+      return None
+
+   # Last alarm: the date is a naive wall clock string "yyyy-mm-ddThh:mm:ss"
+   alarm = resp.get("a")
+   if not alarm:
+      alarm = {}
+   else:
+      alarm["dateTime"] = alarm["dateTime"].replace(" ", "T")[:19]
+
+   trend = str(ha_value(st, "_last_glucose_trend")).upper()
+   if trend not in SG_TRENDS:
+      trend = "NONE"
+
+   shield = ha_value(st, "_active_basal_pattern")
+   if shield == None or shield in ("unavailable", "unknown"):
+      shield = "FEATURE_OFF"
+
+   ttc = ha_num(st, "_sensor_time_to_next_calibration_hours", 255, int)
+
+   return {
+      "lastConduitUpdateServerDateTime": int(ha_num(st, "_last_update", 0)) * 1000,
+      "clientTimeZoneName": str(ha_value(st, "_timezone")),
+      "lastAlarm": alarm,
+      "conduitInRange": ha_on(st, "_conduit_in_range"),
+      "conduitMedicalDeviceInRange": ha_on(st, "_conduit_pump_in_range"),
+      "conduitSensorInRange": ha_on(st, "_conduit_sensor_in_range"),
+      "pumpBatteryLevelPercent": ha_num(st, "_pump_battery_level", 0, int),
+      "reservoirRemainingUnits": ha_num(st, "_reservoir_remaining_units", 0),
+      "sensorDurationHours": ha_num(st, "_sensor_duration_hours", 255, int),
+      "sensorState": "NORMAL",
+      "calFreeSensor": ttc == 255,
+      "calibStatus": "",
+      "timeToNextCalibHours": ttc,
+      "therapyAlgorithmState": {"autoModeShieldState": shield},
+      "lastSGTrend": trend,
+      "lastSG": {"sg": ha_num(st, "_last_glucose_level_mg_dl", 0, int)},
+      "activeInsulin": {"amount": ha_num(st, "_active_insulin", 0)},
+      "aboveHyperLimit": ha_num(st, "_above_hyper_limit", "--", int),
+      "timeInRange": ha_num(st, "_time_in_range", "--", int),
+      "belowHypoLimit": ha_num(st, "_below_hypo_limit", "--", int),
+      "averageSG": ha_num(st, "_average_glucose_level_mg_dl", "--", int),
+   }
+
+def ha_get_pumpdata(haaddr, haport, hatoken):
+   url = "http://%s:%s%s" % (haaddr, haport, API_URL)
+   headers = {"Authorization": "Bearer " + hatoken, "Content-Type": "application/json"}
+   r = None
+   try:
+      r = requests.post(url, data=json.dumps({"template": HA_TEMPLATE}), headers=headers, timeout=20)
+      print("status code: %d" % (r.status_code))
+      if r.status_code == 401:
+         print("Home Assistant refused the access token")
+      if r.status_code != 200:
+         return None
+      return ha_to_jdata(json.loads(r.text))
+   except Exception as e:
+      print("Home Assistant request failed: %s" % e)
+      return None
+   finally:
+      try:
+         r.close()
+      except:
+         pass
+
+
+#################################################
+#
 # Pump data update handler
 #
 #################################################
 
-def handle_pumpdataupdate(proxyaddr, proxyport):
+def handle_pumpdataupdate(haaddr, haport, hatoken):
    global page1, page1, page2, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, timer0, timer1, timer2, timer3
    global lastErrorMsg
    global lastStatusMsg
    global lastUpdateTm
    global dstDelta
-   proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
-
    # Update Minimed data
    print("update Minimed data")
    
-   # Get Minimed data from proxy via API
-   try:
-      r = requests.get(proxy_url, headers={'Content-Type': 'application/json'}, timeout=20)
-      jdata = r.json()
-      print("status code: %d" % (r.status_code))
-   except:
-      r = None
-   
-   if r != None and r.status_code == 200 and jdata != "":
+   # Get Minimed data from Home Assistant (Carelink integration)
+   jdata = ha_get_pumpdata(haaddr, haport, hatoken)
+
+   if jdata != None:
       try:
          lastUpdateTm = int(jdata["lastConduitUpdateServerDateTime"]//1000)
          # Check for DST
@@ -1142,8 +1262,9 @@ def setup():
    global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, imageWifi, imagePower, labelBglValue, labelBglUnit, labelActInsValue, labelActIns,  labelBasalRate, labelBasalPatt, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
 
    global ntpserver
-   global proxyaddr
-   global proxyport
+   global haaddr
+   global haport
+   global hatoken
    global wlan
 
    # Init M5 libraries
@@ -1161,8 +1282,8 @@ def setup():
    time.sleep_ms(1000)
   
    # Read config from EEPROM
-   wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
-   print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
+   wifissid,wifipass,haaddr,haport,hatoken,ntpserver,timezone = read_config()
+   print("wifissid: %s, wifipass: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,haaddr,haport,ntpserver,timezone))
 
    # Wifi connection
    wlan = wlan_connect(wifissid, wifipass)
@@ -1221,12 +1342,12 @@ def setup():
    labelTimeZone    = m5ui.M5Label('Time zone', x=52, y=97, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
    labelMyTimeZone  = m5ui.M5Label(timezone, x=143, y=97, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
 
-   # Carelink proxy settings
-   labelCarelinkProxy = m5ui.M5Label('Carelink Proxy', x=31, y=124, text_c=0x09f31a, font=lv.font_montserrat_18, parent=page3)
+   # Home Assistant settings
+   labelCarelinkProxy = m5ui.M5Label('Home Assistant', x=31, y=124, text_c=0x09f31a, font=lv.font_montserrat_18, parent=page3)
    labelIpAddress   = m5ui.M5Label('IP address', x=52, y=151, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
-   labelMyIpAddress = m5ui.M5Label(proxyaddr, x=143, y=151, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyIpAddress = m5ui.M5Label(haaddr, x=143, y=151, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
    labelPort        = m5ui.M5Label('Port', x=52, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
-   labelMyPort      = m5ui.M5Label(proxyport, x=143, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyPort      = m5ui.M5Label(haport, x=143, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
 
    # Button on page 3
    imageDelBtn      = m5ui.M5Image(FLASH_IMG+"btn-delete.jpg", x=280, y=200, rotation=0, scale_x=1, scale_y=1, parent=page3)
@@ -1265,7 +1386,7 @@ def setup():
    handle_timeupdate()
 
    # Get first data from pump
-   handle_pumpdataupdate(proxyaddr, proxyport)
+   handle_pumpdataupdate(haaddr, haport, hatoken)
 
    # Load page 1
    page1.screen_load()
@@ -1278,8 +1399,9 @@ def setup():
 #################################################
 
 def loop():
-   global proxyaddr
-   global proxyport
+   global haaddr
+   global haport
+   global hatoken
    global ntpserver
    global runNtpsync
    global runTimeupdate
@@ -1291,7 +1413,7 @@ def loop():
 
    # Run handlers as requested
    if runPumpdataupdate:
-      handle_pumpdataupdate(proxyaddr, proxyport)
+      handle_pumpdataupdate(haaddr, haport, hatoken)
       runPumpdataupdate = False
    if runNtpsync:
       handle_ntpsync(ntpserver)

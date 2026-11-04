@@ -11,13 +11,9 @@ Fits in nicely on your bedside table or on a shelf in the living room and lets y
 
 ## System architecture
 
-This project leverages the Cloud infrastructure provided by Medtronic. The picture below summarizes the architecture of the data communication path.
+This fork gets its data from [Home Assistant](https://www.home-assistant.io) instead of a separate proxy script. The [Carelink integration for Home Assistant](https://github.com/yo-han/Home-Assistant-Carelink) logs in to the Medtronic Carelink Cloud and exposes the pump and sensor data as entities. The *M5Stack Minimed Monitor* asks Home Assistant for these entities over the local network and displays them on the M5Stack Core2 screen.
 
-The data acquired by the insulin pump is transmitted periodically to the patients phone running the *Minimed Mobile* app which works as a Cloud gateway. It forwards the data to the Carelink Cloud. A phone with the *Carelink Connect* app can then pull the data from the Cloud and display it.
-
-The *M5Stack Minimed Monitor* replaces the last piece in this communication chain. So it interfaces with the Carelink Cloud REST API (2) to receive the patients data and displays it on the M5Stack Core2s screen. It can be used in addition to the phone with *Carelink Connect* app.
-
-Since the M5Stack Core2/3 devices have built-in Bluetooth capability, it is theoretically possible to pull the data directly from the pump via the BLE link (1). But the communication protocol for this is not publicly available. Although there are ongoing efforts for an open implementation of the protocol in the [OpenMinimed](https://github.com/OpenMinimed) project.
+The data acquired by the insulin pump is transmitted periodically to the patients phone running the *Minimed Mobile* app, which forwards it to the Carelink Cloud. Home Assistant pulls it from there (default every 60 seconds, configurable in the integration).
 
 
 
@@ -65,7 +61,9 @@ Other features:
 
 This application has been running stable on my Core2 device for some years now. I am using it on a daily basis and the functionality implemented works reliably for me. The device runs for days and weeks without issues, reporting continuously all available data from the pump. It works with G3, G4 and Simplera sensors which are paired with the pump.
 
-As a dependency, *M5 Minimed Monitor* needs the [Carelink Python Client](https://github.com/ondrej1024/carelink-python-client), which is responsible for downloading periodically the Minimed pump and sensor data from the Carelink Cloud server. It is not integrated into the Core2 device as this requires a porting of the client code to MicroPython. Therefore I have an external [carelink_client_proxy](https://github.com/ondrej1024/carelink-python-client#using-the-proxy-tool) running on a separate device which is on 24h a day and provides the data to the Core2 in the LAN via a very simple REST API. While setting this up should not be a big deal for experienced developers, I understand that it is not really "user friendly". And it prevents you from taking the monitoring device with you when traveling (well, you can do it but it will obviously not work). 
+As a dependency, *M5 Minimed Monitor* needs a running Home Assistant with the [Carelink integration](https://github.com/yo-han/Home-Assistant-Carelink) installed and working. The monitor does not talk to Carelink itself.
+
+Not available when using Home Assistant as the data source, because the integration does not provide them: basal rate and pattern, pump banners (temporary target, delivery suspended, ...), system status messages, and the sensor state (so no "calibration required" or "change sensor" icon).
 
 Any contributions are welcome to overcome these shortcomings.
 
@@ -89,7 +87,11 @@ Before using the *M5 Minimed Monitor*, there are basically 3 items which need to
 
 * Credentials of your Wifi network
 * An NTP server address and your time zone
-* The network address of the Carelink proxy
+* The address (IP or hostname) and port of your Home Assistant, and a *long-lived access token* (create one in Home Assistant under your profile, tab *Security*)
+
+The Carelink integration entities are found automatically, so you do not have to enter entity names. This only works while the entity IDs still end with the default names of the integration (for example `..._last_glucose_level_mg_dl`); do not rename them.
+
+Home Assistant is contacted over plain HTTP on the local network, so use an address like `homeassistant.local` or the IP address with port 8123.
 
 When starting the *M5 Minimed Monitor* for the first time (or if Wifi connection cannot be established with the current configuration), it will automatically switch into Access Point (configuration) mode and prompt you to connect to the Wifi network "M5_MINIMED_MON" (password is `123456789`) with your mobile phone or a PC. Then you can connect to the configuration Web UI at `http://192.168.4.1`
 
@@ -118,7 +120,7 @@ $ cd PC
 $ python3 minimed-mon-pc.py
 ```
 
-Be sure to modify the following line in `minimed-mon-pc.py` with the IP address where your Carelink Python Client is running:
+**Note:** the PC version has not been converted to Home Assistant yet and still needs the Carelink Python Client proxy. Be sure to modify the following line in `minimed-mon-pc.py` with the IP address where your Carelink Python Client is running:
 
 ```
 MY_PROXY_ADDR = "0.0.0.0" # Replace with your Carelink Python Client IP address
