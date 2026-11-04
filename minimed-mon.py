@@ -506,9 +506,8 @@ def do_access_point(ntpserver,timezone,haport):
       rmethod  = request.split()[0]
       rurl     = request.split()[1]
       rheaders = request.split()[2]
-      print("request: %s\n" % (request))
       #print("rmethod: %s\n" % (rmethod))
-      print("rurl: %s\n" % (rurl))
+      print("rurl: %s\n" % (rurl.split("?")[0]))   # without the query: it contains the passwords
 
       # Send response headers
       conn.send('HTTP/1.1 200 OK\n')
@@ -579,7 +578,7 @@ def do_access_point(ntpserver,timezone,haport):
 
    nvs.commit()
    print("New configuration parameters stored in EEPROM\n")
-   print("wifissid: %s, wifipass: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,haaddr,haport,ntpserver,timezone))
+   print("wifissid: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,haaddr,haport,ntpserver,timezone))
    do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...", None)
 
    # Reset device
@@ -1283,7 +1282,7 @@ def setup():
   
    # Read config from EEPROM
    wifissid,wifipass,haaddr,haport,hatoken,ntpserver,timezone = read_config()
-   print("wifissid: %s, wifipass: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,haaddr,haport,ntpserver,timezone))
+   print("wifissid: %s, haaddr: %s, haport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,haaddr,haport,ntpserver,timezone))
 
    # Wifi connection
    wlan = wlan_connect(wifissid, wifipass)
