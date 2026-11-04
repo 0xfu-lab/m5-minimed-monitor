@@ -89,7 +89,7 @@ Before using the *M5 Minimed Monitor*, there are basically 3 items which need to
 * An NTP server address and your time zone
 * The address (IP or hostname) and port of your Home Assistant, and a *long-lived access token* (create one in Home Assistant under your profile, tab *Security*)
 
-The Carelink integration entities are found automatically, so you do not have to enter entity names. This only works while the entity IDs still end with the default names of the integration (for example `..._last_glucose_level_mg_dl`); do not rename them.
+The Carelink integration entities are found automatically, so you do not have to enter entity names. This only works while the entity IDs still end with the default names of the integration (for example `sensor.last_glucose_level_mg_dl` or `sensor.carelink_<pump>_last_glucose_level_mg_dl`); do not rename them.
 
 Home Assistant is contacted over plain HTTP on the local network, so use an address like `homeassistant.local` or the IP address with port 8123.
 

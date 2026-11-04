@@ -908,8 +908,8 @@ def handle_devstatusupdate():
 # is then converted into the same structure the Carelink proxy used to
 # deliver, so the display code below stays unchanged.
 #
-# Entities are found by the end of their entity_id (slug of the sensor name),
-# so the name of the pump in the entity_id does not matter. Fields which the
+# Entities are found by the end of their entity_id (slug of the sensor name), with or without
+# a prefix like carelink_<pump>_, so the name of the pump in the entity_id does not matter. Fields which the
 # integration does not provide (basal rate, banner, system status message,
 # sensor state) are left out; the display code hides them when missing.
 #
@@ -922,7 +922,7 @@ HA_TEMPLATE = (
    "{%- set dc = state_attr(e, 'device_class') -%}"
    "{%- set v = as_timestamp(states(e), none) if dc == 'timestamp' else states(e) -%}"
    "{%- set ns.s = ns.s + [[e, v]] -%}"
-   "{%- if e.endswith('_last_alarm') and state_attr(e, 'GUID') -%}"
+   "{%- if (e.split('.')[1] == 'last_alarm' or e.endswith('_last_alarm')) and state_attr(e, 'GUID') -%}"
    "{%- set ns.a = {'GUID': state_attr(e, 'GUID'), 'faultId': state_attr(e, 'faultId') | string, 'type': state_attr(e, 'type'), 'dateTime': state_attr(e, 'dateTime') | string} -%}"
    "{%- endif -%}"
    "{%- endfor -%}"
@@ -932,8 +932,12 @@ HA_TEMPLATE = (
 SG_TRENDS = ("UP", "DOWN", "UP_DOUBLE", "DOWN_DOUBLE", "UP_TRIPLE", "DOWN_TRIPLE", "NONE")
 
 def ha_value(states, suffix):
+   # suffix starts with "_", for example "_last_glucose_level_mg_dl". The entity is called
+   # sensor.last_glucose_level_mg_dl or sensor.carelink_<pump>_last_glucose_level_mg_dl,
+   # depending on how Home Assistant named it: compare the id without "sensor." with both.
    for ent, val in states:
-      if ent.endswith(suffix):
+      oid = ent.split(".", 1)[-1]
+      if oid == suffix[1:] or oid.endswith(suffix):
          return val
    return None
 
